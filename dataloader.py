@@ -5,7 +5,7 @@
 
 import torch
 from torch.utils.data import Dataset, DataLoader
-from torch.nn.utils.rnn import pad_packed_sequence
+from torch.nn.utils.rnn import pad_sequence
 from sklearn.model_selection import train_test_split
 import numpy as np
 import pandas as pd
@@ -87,14 +87,18 @@ class MoviesDataset(Dataset):
         return torch.tensor( self.dataset.iloc[i]['item'][:-1] ), torch.tensor( self.dataset.iloc[i]['timestamp'][:-1] ), torch.tensor( self.dataset.iloc[i]['item'][-1] ), torch.tensor( self.dataset.iloc[i]['label'] )
 
 
-def pad_collate(batch):
+def pad_collate(batch, pos_size):
     """ Padding pour les séquences utilisateurs.
     """
     (xx, tt, yy, ll) = zip(*batch)
     
     # Padding pour les séquences d'items et les séquences de temps
-    xx_pad = pad_packed_sequence(xx, batch_first=True, padding_value=0, total_length = 20000)
-    tt_pad = pad_packed_sequence(tt, batch_first=True, padding_value=0, total_length = 20000)
+    xx_pad = torch.zeros(len(xx), pos_size, dtype=torch.int)
+    tt_pad = torch.zeros(len(tt), pos_size, dtype=torch.int)
+    
+    for i in range(len(xx)):
+        xx_pad[i] = torch.cat((xx[i], torch.zeros(pos_size - len(xx[i]))))
+        tt_pad[i] = torch.cat((tt[i], torch.zeros(pos_size - len(tt[i]))))
     
     # Padding des positions des items dans une séquence
     pp_pad = xx_pad.numpy().copy()
@@ -103,4 +107,4 @@ def pad_collate(batch):
         mask = np.where(pp_pad[i], 1, 0)
         pp_pad[i] = np.arange(1, len(pp_pad[i]) + 1) * mask
     
-    return xx_pad, tt_pad, torch.tensor(pp_pad), torch.tensor(yy), torch.tensor(ll)
+    return xx_pad, tt_pad, torch.tensor(pp_pad), torch.stack(list(yy), dim=0), torch.stack(list(ll), dim=0)

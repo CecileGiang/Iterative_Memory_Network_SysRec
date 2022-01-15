@@ -43,16 +43,19 @@ data_test = DataLoader(test, collate_fn = partial(pad_collate, pos_size = POS_SI
 
 def IMN_net(train, test, embed_size, heads, mem_iter, n_epochs = 20, lr = 0.001):
     
+    # Device
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    
+    
+    softmax = nn.Softmax()
     # Création des embeddings
-    embedding = EmbeddingLayer(ITEM_SIZE, TIME_SIZE, POS_SIZE, embed_size) # GLOBAL
-    print('item size: ', ITEM_SIZE)
-    print('time size: ', TIME_SIZE)
-    print('pos size + 1: ', POS_SIZE)
+    embedding = EmbeddingLayer(ITEM_SIZE, TIME_SIZE, POS_SIZE, embed_size)
+
     # Initialisation du module GRU pour le module Memory Update
-    gru_mem_up = nn.GRUCell(embed_size, embed_size) #GLOBAL
+    gru_mem_up = nn.GRUCell(embed_size, embed_size)
     
     # Initialisation des modules GRU et Linear pour le module Memory Enhancement
-    gru_mem_en = nn.GRUCell(2 * embed_size, embed_size) #GLOBAL
+    gru_mem_en = nn.GRUCell(2 * embed_size, embed_size)
     linear = nn.Linear(embed_size, embed_size)
     
     # Initialisation de la Sequential finale
@@ -109,17 +112,18 @@ def IMN_net(train, test, embed_size, heads, mem_iter, n_epochs = 20, lr = 0.001)
             
             # ATTENTION: PEUT-ÊTRE QU'IL MANQUE UNE FC
             att_mem = torch.cat((att_vect.squeeze(), memory), dim = -1)
-            print(att_vect.squeeze().shape)
             
-            print(att_mem.shape)
             final_out = sequential.forward(att_mem)
             
-            train_loss.append(loss(final_out, l))
+            train_loss.append(loss(final_out, label))
             train_loss[-1].backward()
             opti.step()
+    
+        #train_loss_batch = np.mean(train_loss.detach().numpy())
         
-        train_loss_batch = np.mean(train_loss)
-        print("Epoch {} | Train loss = {}" . format(epoch, train_loss_batch))
+        print("Epoch {} | Train loss = {}" . format(epoch, train_loss[-1]))
+        print(softmax(final_out))
+        print(label)
 """
 
 
