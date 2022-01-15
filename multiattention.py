@@ -105,7 +105,9 @@ class MultiAttention(nn.Module):
         self.output = torch.matmul(torch.permute(self.att_vect, (0,2,1)), self.V_).squeeze()
         
         return self.output, self.att_vect
-          
+    
+    def parameters(self):
+        return list(self.keys.parameters()) + list(self.queries.parameters()) + list(self.values.parameters()) + list(self.fully_connected.parameters())
         
 ## Tests
 #x, t, p, y = next(iter(data_train))

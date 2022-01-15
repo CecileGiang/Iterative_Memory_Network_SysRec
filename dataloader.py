@@ -5,7 +5,7 @@
 
 import torch
 from torch.utils.data import Dataset, DataLoader
-from torch.nn.utils.rnn import pad_sequence
+from torch.nn.utils.rnn import pad_packed_sequence
 from sklearn.model_selection import train_test_split
 import numpy as np
 import pandas as pd
@@ -73,6 +73,9 @@ class MoviesDataset(Dataset):
             item_list.remove(d[1][-1])
             d[1][-1] = rd.choice(item_list)
         
+        # Calcul de la taille de séquence maximale
+        self.pos_size = max([ len(d[1]) for i, d in self.dataset.iterrows() ])
+        
     def __len__(self):
         """ Retourne la taille du dataset.
         """
@@ -90,8 +93,8 @@ def pad_collate(batch):
     (xx, tt, yy, ll) = zip(*batch)
     
     # Padding pour les séquences d'items et les séquences de temps
-    xx_pad = pad_sequence(xx, batch_first=True, padding_value=0)
-    tt_pad = pad_sequence(tt, batch_first=True, padding_value=0)
+    xx_pad = pad_packed_sequence(xx, batch_first=True, padding_value=0, total_length = 20000)
+    tt_pad = pad_packed_sequence(tt, batch_first=True, padding_value=0, total_length = 20000)
     
     # Padding des positions des items dans une séquence
     pp_pad = xx_pad.numpy().copy()
