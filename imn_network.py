@@ -41,22 +41,17 @@ data_test = DataLoader(test, collate_fn = partial(pad_collate, pos_size = POS_SI
 ###############################################################################
 
 
-def IMN_net(train, test, embed_size, heads, mem_iter, n_epochs = 20, lr = 0.001):
+def IMN_net(train, test, embed_size, heads, mem_iter, n_epochs = 3000, lr = 0.00001):
     
-    # Device
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    
-    
-    softmax = nn.Softmax()
     # Création des embeddings
-    embedding = EmbeddingLayer(ITEM_SIZE, TIME_SIZE, POS_SIZE, embed_size)
+    embedding = EmbeddingLayer(ITEM_SIZE, TIME_SIZE, POS_SIZE, embed_size).to(device)
 
     # Initialisation du module GRU pour le module Memory Update
-    gru_mem_up = nn.GRUCell(embed_size, embed_size)
+    gru_mem_up = nn.GRUCell(embed_size, embed_size).to(device)
     
     # Initialisation des modules GRU et Linear pour le module Memory Enhancement
-    gru_mem_en = nn.GRUCell(2 * embed_size, embed_size)
-    linear = nn.Linear(embed_size, embed_size)
+    gru_mem_en = nn.GRUCell(2 * embed_size, embed_size).to(device)
+    linear = nn.Linear(embed_size, embed_size).to(device)
     
     # Initialisation de la Sequential finale
     sequential = nn.Sequential(
@@ -67,11 +62,10 @@ def IMN_net(train, test, embed_size, heads, mem_iter, n_epochs = 20, lr = 0.001)
                     nn.Linear(256, 128),
                     nn.ReLU(),
                     nn.Linear(128, 2)
-                    #nn.Softmax()
-                )
+                ).to(device)
     
     # Création de la liste des modules MultiAttention
-    multi_attention = [ MultiAttention(embed_size, heads = heads) for i in range(mem_iter) ]
+    multi_attention = [ MultiAttention(embed_size, heads = heads).to(device) for i in range(mem_iter) ]
     
     ma_parameters = []
     for ma in multi_attention:
@@ -81,7 +75,7 @@ def IMN_net(train, test, embed_size, heads, mem_iter, n_epochs = 20, lr = 0.001)
                  list(sequential.parameters()) + ma_parameters
     
     opti = torch.optim.Adam(parameters, lr = lr)
-    loss = torch.nn.CrossEntropyLoss(ignore_index = 0)
+    loss = torch.nn.CrossEntropyLoss()
     
     for epoch in range(n_epochs):
         
@@ -92,16 +86,25 @@ def IMN_net(train, test, embed_size, heads, mem_iter, n_epochs = 20, lr = 0.001)
             # Remise à zéro de l'optimiseur
             opti.zero_grad()
             
+            # On met les données sur gpu
+            seq_items = seq_items.to(device)
+            time = time.to(device)
+            pos = pos.to(device)
+            target_items = target_items.to(device)
+            label = label.to(device)
+            
             # Embedding du batch
             seq_emb, time_emb, pos_emb, target_emb = embedding.forward(seq_items, time, pos, target_items)
             seq_emb = seq_emb + time_emb + pos_emb
             
             # Initialisation de la mémoire
-            memory = torch.clone(target_emb)
+            memory = torch.clone(target_emb).to(device)
             
             # Memory Update
             for i in range(mem_iter):
                 output, att_vect = multi_attention[i].forward(seq_emb, target_emb, memory)
+                output = output.to(device)
+                att_vect = att_vect.to(device)
                 memory = gru_mem_up(output, memory)
             
             # Memory Enhancement
@@ -115,15 +118,15 @@ def IMN_net(train, test, embed_size, heads, mem_iter, n_epochs = 20, lr = 0.001)
             
             final_out = sequential.forward(att_mem)
             
-            train_loss.append(loss(final_out, label))
-            train_loss[-1].backward()
+            loss_ = loss(final_out, label)
+            train_loss.append(loss_.item())
+            loss_.backward()
             opti.step()
     
-        #train_loss_batch = np.mean(train_loss.detach().numpy())
+        train_loss_batch = np.mean(train_loss)
         
-        print("Epoch {} | Train loss = {}" . format(epoch, train_loss[-1]))
-        print(softmax(final_out))
-        print(label)
+        print("Epoch {} | Train loss = {}" . format(epoch, train_loss_batch))
+        
 """
 
 

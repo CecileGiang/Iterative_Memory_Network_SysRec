@@ -17,6 +17,9 @@ import random as rd
 ###############################################################################
 
 
+# Device
+device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    
 # ratings_Movies_and_TV.csv
 movies_df = pd.read_csv("../data/ratings_Movies_and_TV.csv", names=["user", "item", "rating", "timestamp"])
 

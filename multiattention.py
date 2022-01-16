@@ -86,19 +86,19 @@ class MultiAttention(nn.Module):
         e_ = torch.permute(self.e, (1,0,2))
         
         # Masque sur e pour garder le padding à 0
-        self.e_mask = np.where(e_.detach().numpy(), 1, 0)
+        self.e_mask = np.where(e_.cpu().detach().numpy(), 1, 0)
         
         l_alpha = []
-        l_alpha.append((self.v - e_).detach().numpy() * self.e_mask)
-        l_alpha.append((self.v * e_).detach().numpy() * self.e_mask)
-        l_alpha.append((self.m - e_).detach().numpy() * self.e_mask)
-        l_alpha.append((self.m * e_).detach().numpy() * self.e_mask)
+        l_alpha.append((self.v - e_).cpu().detach().numpy() * self.e_mask)
+        l_alpha.append((self.v * e_).cpu().detach().numpy() * self.e_mask)
+        l_alpha.append((self.m - e_).cpu().detach().numpy() * self.e_mask)
+        l_alpha.append((self.m * e_).cpu().detach().numpy() * self.e_mask)
         
         for i in range(len(l_alpha)):
             l_alpha[i] = torch.permute(torch.Tensor(l_alpha[i]), (1,0,2))
         
         # Concatenation des similarités
-        self.alpha = torch.cat((l_alpha[0], l_alpha[1], l_alpha[2], l_alpha[3]), dim = -1)
+        self.alpha = torch.cat((l_alpha[0], l_alpha[1], l_alpha[2], l_alpha[3]), dim = -1).to(device)
         
         # Calcul du vecteur d'attention
         self.att_vect = self.fully_connected(self.alpha)
