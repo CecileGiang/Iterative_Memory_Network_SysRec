@@ -1,10 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Sat Jan  8 14:28:24 2022
-
-@author: Cécile GIANG
-"""
-
 import torch
 import torch.nn as nn
 from functools import partial
@@ -14,13 +7,23 @@ from multiattention import *
 from sklearn.metrics import accuracy_score, roc_curve, auc
 from scipy.special import softmax
 
+from torchsummary import summary
+
+def count_parameters(model):
+    total_params = 0
+    for name, parameter in model.named_parameters():
+        if not parameter.requires_grad: continue
+        param = parameter.numel()
+        total_params+=param
+    return total_params
+
 ###############################################################################
 # -------------------------- CREATION DES DATASETS -------------------------- #
 ###############################################################################
 
 
 BATCH_SIZE = 512
-ds = MoviesDataset(movies_df)
+ds = MoviesDataset(books_df)
 
 ## Dictionnaires pour l'indexation des items et des timestamps
 item2int = ds.item_map
@@ -58,24 +61,20 @@ class IMN (nn.Module):
 
         # Initialisation de la Sequential finale
         self.sequential = nn.Sequential(
-                        nn.BatchNorm1d(embed_size * 2),
+                        #nn.BatchNorm1d(embed_size * 2),
                         # nn.Linear(POS_SIZE + embed_size, 512),
                         #nn.Linear(embed_size * 2, 512),
                         #nn.ReLU(),
-                        #nn.BatchNorm1d(512),    
+                        #nn.BatchNorm1d(512),
                         #nn.Dropout(),
-                        nn.Linear(embed_size*2, 256),
-                        nn.ReLU(),
-                        nn.BatchNorm1d(256),
-                        nn.Dropout(),
-                        nn.Linear(256, 128),
+                        nn.Linear(embed_size*2, 128),
                         nn.ReLU(),
                         nn.BatchNorm1d(128),
-                        nn.Dropout(),
+                        #nn.Dropout(),
                         nn.Linear(128, 64),
                         nn.ReLU(),
                         nn.BatchNorm1d(64),
-                        nn.Dropout(),
+                        #nn.Dropout(),
                         nn.Linear(64, 2)
 
                     ).to(device)
@@ -127,15 +126,18 @@ class IMN (nn.Module):
                      list(self.linear.parameters()) + list(self.sequential.parameters()) + ma_parameters
 
 
-def IMN_net(train, test, embed_size, heads, mem_iter, n_epochs = 3000, lr = 0.001, reg=1e-4, file='res.txt'):
+def IMN_net(train, test, embed_size, heads, mem_iter=3, n_epochs = 150, lr = 0.001, reg=1e-6, file='res_sans_reg.txt'):
 
     imn = IMN(train, test, embed_size, heads, mem_iter)
     opti = torch.optim.Adam(imn.get_parameters(), lr = lr, weight_decay=reg)
     loss = torch.nn.CrossEntropyLoss()
 
+    with open('summary_sans_reg.txt', 'a+') as summary_file :
+         summary_file.write("Total Trainable Params {} | Nb train data = {}" . format( count_parameters(imn), len(train)))
+
     for epoch in range(n_epochs):
 
-        imn.train()
+        #imn.train()
         train_loss, test_loss  = [], []
         train_auc, test_auc = [], []
 
@@ -155,7 +157,7 @@ def IMN_net(train, test, embed_size, heads, mem_iter, n_epochs = 3000, lr = 0.00
             opti.step()
 
 
-        imn.eval()
+        #imn.eval()
         with torch.no_grad():
 
 

@@ -13,6 +13,24 @@ import random as rd
 
 
 ###############################################################################
+# --------------------------- FONCTIONS AUXILIAIRES ------------------------- #
+###############################################################################
+
+def shift_seq (liste, seq_length, decalage) :
+    seqs = [ liste[i:(i+seq_length)] for i in range(0, len(liste)-seq_length, decalage)]
+    seqs.append( liste[-seq_length:])
+    return seqs
+
+def augmentation_data (df, seq_length, decalage) :
+    data_2 = list()
+    for index, rows in df.iterrows():
+        seqs_item = shift_seq(rows['item'], seq_length, decalage)
+        seqs_timestamp = shift_seq(rows['timestamp'], seq_length, decalage)
+        for i in range(len(seqs_item)) :
+            data_2.append({'user' : rows['user'] , 'item' : seqs_item[i] , 'timestamp' : seqs_timestamp[i]})
+    return pd.DataFrame(data_2)
+
+###############################################################################
 # -------------------------- CHARGEMENT DES DATASETS ------------------------ #
 ###############################################################################
 
@@ -21,19 +39,20 @@ import random as rd
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 # ratings_Movies_and_TV.csv
-movies_df = pd.read_csv("../data/ratings_Movies_and_TV.csv", names=["user", "item", "rating", "timestamp"])
-
+#movies_df = pd.read_csv("data/ratings_Movies_and_TV.csv", names=["user", "item", "rating", "timestamp"])
+books_df = pd.read_csv("data/ratings_Books.csv", names=["user", "item", "rating", "timestamp"])
+#books = pd.read_csv("data/Books.csv", names=["user", "item", "rating", "timestamp"], nrows=30000000)
 
 class MoviesDataset(Dataset):
     """ Constucteur du dataset pour rating_Movies_and_TV.csv.
     """
-    def __init__(self, data, min_length = 20, ratio_neg = 0.5):
+    def __init__(self, data, seq_length = 100, decalage = 100, ratio_neg = 0.5):
         """ Constructeur de la classe MoviesDataset.
             @param data: données ratings_Movies_and_TV.csv sous la forme d'un dataframe pandas
             @param min_length: int, longueur minimale de l'historique des utilisateurs
         """
         users, counts = np.unique(data['user'], return_counts=True)
-        self.data = data.loc[data['user'].isin(users[counts > min_length])]
+        self.data = data.loc[data['user'].isin(users[counts > seq_length])]
         self.data = self.data.sort_values("timestamp",ascending=True)
 
         # Map users and items
@@ -64,17 +83,25 @@ class MoviesDataset(Dataset):
         self.data["timestamp"] = self.data["timestamp"].map(self.timestamp_map)
 
         self.data = self.data.groupby('user').agg({'item' : list, 'timestamp' : list}).reset_index()
+        self.data = augmentation_data (self.data, seq_length, decalage)
 
+        self.data['label'] = np.where(self.data.index % 2 == 0, 0, 1)
+
+
+        """
         self.dataset = self.data.copy()
         self.dataset["label"] = 1
 
         self.data_neg = self.data.sample(frac = ratio_neg)
+        """
+        for i, d in self.data.iterrows():
+            if(i%2==0):
+                #self.dataset = self.dataset.append({"user" : d[0], "item" : d[1], "timestamp" : d[2], "label" : 0} , ignore_index=True)
+                item_list = list(self.item_map.values())
+                item_list.remove(d[1][-1])
+                d[1][-1] = rd.choice(item_list)
 
-        for i, d in self.data_neg.iterrows():
-            self.dataset = self.dataset.append({"user" : d[0], "item" : d[1], "timestamp" : d[2], "label" : 0} , ignore_index=True)
-            item_list = list(self.item_map.values())
-            item_list.remove(d[1][-1])
-            d[1][-1] = rd.choice(item_list)
+        self.dataset = self.data
 
         # Calcul de la taille de séquence maximale
         self.pos_size = max([ len(d[1]) for i, d in self.dataset.iterrows() ])
