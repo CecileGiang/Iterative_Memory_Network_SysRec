@@ -1,3 +1,10 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Fri Feb 11 13:07:39 2022
+
+@author: Cécile GIANG, KHALFAT Célina, ZHUANG Pascal
+"""
+
 ###############################################################################
 # ----------------------- IMPORTATION DES LIBRAIRIES ------------------------ #
 ###############################################################################
@@ -16,7 +23,14 @@ import random as rd
 # --------------------------- FONCTIONS AUXILIAIRES ------------------------- #
 ###############################################################################
 
+
 def shift_seq (liste, seq_length, decalage) :
+    """ Fonction permettant de générer des sous-séquences de liste de longueur seq_length,
+        et décalées de decalage.
+        @param liste: torch.Tensor, séquence utilisateur
+        @param seq_length: int, longueur des sous-séquences
+        @param decalage: int, pas de décalage
+    """
     seqs = [ liste[i:(i+seq_length)] for i in range(0, len(liste)-seq_length, decalage)]
     seqs.append( liste[-seq_length:])
     return seqs
@@ -30,6 +44,7 @@ def augmentation_data (df, seq_length, decalage) :
             data_2.append({'user' : rows['user'] , 'item' : seqs_item[i] , 'timestamp' : seqs_timestamp[i]})
     return pd.DataFrame(data_2)
 
+
 ###############################################################################
 # -------------------------- CHARGEMENT DES DATASETS ------------------------ #
 ###############################################################################
@@ -38,18 +53,20 @@ def augmentation_data (df, seq_length, decalage) :
 # Device
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-# ratings_Movies_and_TV.csv
-#movies_df = pd.read_csv("data/ratings_Movies_and_TV.csv", names=["user", "item", "rating", "timestamp"])
-books_df = pd.read_csv("data/ratings_Books.csv", names=["user", "item", "rating", "timestamp"])
-#books = pd.read_csv("data/Books.csv", names=["user", "item", "rating", "timestamp"], nrows=30000000)
 
-class MoviesDataset(Dataset):
+# Chargement des données de csv à pandas
+#movies_df = pd.read_csv("data/ratings_Movies_and_TV.csv", names=["user", "item", "rating", "timestamp"])
+books_df = pd.read_csv("../data/ratings_Books.csv", names=["user", "item", "rating", "timestamp"])
+
+
+class AmazonDataset(Dataset):
     """ Constucteur du dataset pour rating_Movies_and_TV.csv.
     """
-    def __init__(self, data, seq_length = 100, decalage = 100, ratio_neg = 0.5):
+    def __init__(self, data, seq_length = 40, decalage = 5):
         """ Constructeur de la classe MoviesDataset.
             @param data: données ratings_Movies_and_TV.csv sous la forme d'un dataframe pandas
-            @param min_length: int, longueur minimale de l'historique des utilisateurs
+            @param seq_length: int, longueur des sous-séquences
+            @param decalage: int, pas de décalage
         """
         users, counts = np.unique(data['user'], return_counts=True)
         self.data = data.loc[data['user'].isin(users[counts > seq_length])]
@@ -88,19 +105,16 @@ class MoviesDataset(Dataset):
         self.data['label'] = np.where(self.data.index % 2 == 0, 0, 1)
 
 
-        """
-        self.dataset = self.data.copy()
-        self.dataset["label"] = 1
+        l = len(list(self.item_map.values())) # Nombre d'items
+        dic = self.data.to_dict('records')[::2] # i%2==0
 
-        self.data_neg = self.data.sample(frac = ratio_neg)
-        """
-        for i, d in self.data.iterrows():
-            if(i%2==0):
-                #self.dataset = self.dataset.append({"user" : d[0], "item" : d[1], "timestamp" : d[2], "label" : 0} , ignore_index=True)
-                item_list = list(self.item_map.values())
-                item_list.remove(d[1][-1])
-                d[1][-1] = rd.choice(item_list)
-
+        for d in dic :  
+          r = rd.randint(1, l) # Item aléatoire
+                    
+          while (r == d['item'][-1]): 
+              r = rd.randint(1, l)
+                        
+          d['item'][-1] = r
         self.dataset = self.data
 
         # Calcul de la taille de séquence maximale

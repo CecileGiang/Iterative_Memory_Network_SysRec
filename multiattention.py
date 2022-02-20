@@ -1,4 +1,9 @@
 # -*- coding: utf-8 -*-
+"""
+Created on Fri Feb 11 13:00:11 2022
+
+@author: Cécile GIANG, KHALFAT Célina, ZHUANG Pascal
+"""
 
 import torch
 import torch.nn as nn
@@ -14,20 +19,20 @@ class EmbeddingLayer(nn.Module):
             @param embed_dim: int, dimension des embeddings
         """
         super(EmbeddingLayer, self).__init__()
-        
+        print('on rentre')
         self.item_size = item_size
         self.time_size = time_size
         self.pos_size = pos_size
         self.embed_dim = embed_dim
-        
+        print('ici')
         self.item_embedding = nn.Embedding(self.item_size +1, self.embed_dim, padding_idx = 0)
         self.time_embedding = nn.Embedding(self.time_size + 1, self.embed_dim, padding_idx = 0)
         self.pos_embedding = nn.Embedding(self.pos_size + 1, self.embed_dim, padding_idx = 0)
     
     def forward(self, seq_items, times, pos, target_items):
         """ @param seq_items: torch.tensor, batch de séquences utilisateurs de taille batch_size x length
-            @param times: torch.tensors, catégorie temporelle des temps correspondant à chaque item, batch_size x length
-            @param pos: torch.tensors, tenseur indiquant pour chaque item sa position dans une séquence, batch_size x length
+            @param times: torch.tensor, catégorie temporelle des temps correspondant à chaque item, batch_size x length
+            @param pos: torch.tensor, tenseur indiquant pour chaque item sa position dans une séquence, batch_size x length
             @param target_items: torch.tensor, tenseur des items cibles de taille batch_size
         """
         seq_emb = self.item_embedding(seq_items)

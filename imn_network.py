@@ -1,13 +1,25 @@
-import torch
-import torch.nn as nn
-from functools import partial
+# -*- coding: utf-8 -*-
+"""
+Created on Fri Feb 11 13:08:11 2022
+
+@author: Cécile GIANG, KHALFAT Célina, ZHUANG Pascal
+"""
+
 from dataloader import *
 from multiattention import *
 
+import torch
+import torch.nn as nn
+from functools import partial
 from sklearn.metrics import accuracy_score, roc_curve, auc
 from scipy.special import softmax
-
 from torchsummary import summary
+
+
+###############################################################################
+# ------------------------------- UTILITAIRE -------------------------------- #
+###############################################################################
+
 
 def count_parameters(model):
     total_params = 0
@@ -17,13 +29,14 @@ def count_parameters(model):
         total_params+=param
     return total_params
 
+
 ###############################################################################
 # -------------------------- CREATION DES DATASETS -------------------------- #
 ###############################################################################
 
 
-BATCH_SIZE = 512
-ds = MoviesDataset(books_df)
+BATCH_SIZE = 256
+ds = AmazonDataset(books_df, seq_length = 1000, decalage = 5)
 
 ## Dictionnaires pour l'indexation des items et des timestamps
 item2int = ds.item_map
@@ -45,8 +58,19 @@ data_test = DataLoader(test, collate_fn = partial(pad_collate, pos_size = POS_SI
 # ------------------------------- IMN NETWORK ------------------------------- #
 ###############################################################################
 
+
 class IMN (nn.Module):
-    def __init__(self, train, test, embed_size, heads, mem_iter):
+    """ Module modélisant le réseau IMN global.
+    """
+    def __init__(self, train, test, embed_size, heads, mem_iter, p):
+        """ @param train: torch.Tensor, données d'entraînement
+            @param test: torch.Tensor, données de test
+            @param embed_size: int, taille de l'espace des représentations des items
+            @param heads: int, nombre de heads pour le calcul de l'attention
+            @param mem_iter: int, nombre de mises à jours de la mémoire (Memory Update Module)
+            @param p: int, probabilité de négliger un neurone pour le Dropout
+        """
+        
         super(IMN, self).__init__()
 
         # Création des embeddings
@@ -70,11 +94,11 @@ class IMN (nn.Module):
                         nn.Linear(embed_size*2, 128),
                         nn.ReLU(),
                         nn.BatchNorm1d(128),
-                        #nn.Dropout(),
+                        nn.Dropout(p=p),
                         nn.Linear(128, 64),
                         nn.ReLU(),
                         nn.BatchNorm1d(64),
-                        #nn.Dropout(),
+                        #nn.Dropout(p=p),
                         nn.Linear(64, 2)
 
                     ).to(device)
@@ -84,6 +108,12 @@ class IMN (nn.Module):
         self.multi_attention = [ MultiAttention(embed_size, heads = heads).to(device) for i in range(self.mem_iter) ]
 
     def forward (self,seq_items, time, pos, target_items, label) :
+        """ @param seq_items: torch.Tensor, batch des séquences utilisateurs
+            @param time: torch.Tensor, batch des temps associés à chaque item de chaque séquence
+            @param pos: torch.Tensor, batch des positions associées à chaque item dans une séquence
+            @param target_items: torch.Tensor, batch des items targets
+            @param label: torch.Tensor, batch des classes (1 si l'item est bien cliqué au prochain pas, 0 sinon)
+        """
         # On met les données sur gpu
         seq_items = seq_items.to(device)
         time = time.to(device)
@@ -115,7 +145,7 @@ class IMN (nn.Module):
 
         final_out = self.sequential.forward(att_mem)
 
-        return final_out.to(device)
+        return torch.sigmoid(final_out).to(device)
 
     def get_parameters(self):
         ma_parameters = []
@@ -126,75 +156,81 @@ class IMN (nn.Module):
                      list(self.linear.parameters()) + list(self.sequential.parameters()) + ma_parameters
 
 
-def IMN_net(train, test, embed_size, heads, mem_iter=3, n_epochs = 150, lr = 0.001, reg=1e-6, file='res_sans_reg.txt'):
-
-    imn = IMN(train, test, embed_size, heads, mem_iter)
+def IMN_net(train, test, embed_size=10, heads=1, mem_iter=3, n_epochs = 40, lr = 0.001, reg=1e-4, p=0.5):
+    """ Boucle d'apprentissage d'IMN.
+        @param train: torch.Tensor, données d'entraînement
+        @param test: torch.Tensor, données de test
+        @param embed_size: int, taille de l'espace des représentations des items
+        @param heads: int, nombre de heads pour le calcul de l'attention
+        @param mem_iter: int, nombre de mises à jours de la mémoire (Memory Update Module)
+        @param n_epochs: int, nombre d'époques
+        @param lr: float, learning rate
+        @param reg: float, taux de régularisation
+        @param p: int, probabilité de négliger un neurone pour le Dropout
+    """
+    # Initialisation du module IMN
+    imn = IMN(train, test, embed_size, heads, mem_iter,p)
+    
+    # Initialisation de l'optimiseur et de la loss
     opti = torch.optim.Adam(imn.get_parameters(), lr = lr, weight_decay=reg)
-    loss = torch.nn.CrossEntropyLoss()
-
-    with open('summary_sans_reg.txt', 'a+') as summary_file :
-         summary_file.write("Total Trainable Params {} | Nb train data = {}" . format( count_parameters(imn), len(train)))
-
+    loss = torch.nn.CrossEntropyLoss  ()
+    
+    # Affichage du nombre de paramètres
+    print("Total Trainable Params {} | Nb train data = {}" . format( count_parameters(imn), len(train)))
+    
+    
     for epoch in range(n_epochs):
 
-        #imn.train()
+        imn.train()
         train_loss, test_loss  = [], []
         train_auc, test_auc = [], []
-
+        
+        # ------- Phase d'apprentissage
+        
         for seq_items, time, pos, target_items, label in train:
-
-            label = label.to(device)
+            
+            # Données sur device
+            label = label.to(torch.int64).to(device)
+            
             # Remise à zéro de l'optimiseur
             opti.zero_grad()
-            final_out = imn.forward(seq_items, time, pos, target_items, label)
-
+            final_out = imn.forward(seq_items, time, pos, target_items, label).squeeze()
+            
+            # Calcul de la loss et back-propagation
             loss_ = loss(final_out, label)
             train_loss.append(loss_.item())
             fpr, tpr, _ = roc_curve(label.cpu().detach().numpy(), softmax(final_out.cpu().detach().numpy())[:,1], pos_label=1 )
             train_auc.append(auc(fpr, tpr))
-
+            
             loss_.backward()
             opti.step()
-
-
-        #imn.eval()
+        
+        # ------- Phase de test 
+        
+        imn.eval()
+        
         with torch.no_grad():
-
-
             for seq_items_tes, time_test, pos_test, target_items_test, label_test in test :
-
-                final_out_test = imn.forward(seq_items_tes, time_test, pos_test, target_items_test, label_test)
-                label_test = label_test.to(device)
+                
+                # Inférence
+                final_out_test = imn.forward(seq_items_tes, time_test, pos_test, target_items_test, label_test).squeeze()
+                
+                # Données sur device
+                label_test = label_test.to(torch.int64).to(device)
+                
+                # Calcul de la loss
                 loss_test_ = loss(final_out_test, label_test)
                 test_loss.append(loss_test_.item())
                 fpr_test, tpr_test, _ = roc_curve(label_test.cpu().detach().numpy(), softmax(final_out_test.cpu().detach().numpy())[:,1], pos_label=1 )
                 test_auc.append(auc(fpr_test, tpr_test))
 
-
         train_loss_batch = np.mean(train_loss)
         train_auc_batch = np.mean(train_auc)
         test_loss_batch = np.mean(test_loss)
         test_auc_batch = np.mean(test_auc)
+        
+        print("Epoch {} | Train loss = {:.5} | Train AUC = {:.5} | Test loss = {:.5} | Test AUC = {:.5}" . format(epoch, train_loss_batch, train_auc_batch, test_loss_batch, test_auc_batch))
 
 
-        with open(file, 'a+') as res_file :
-            res_file.write("Epoch {} | Train loss = {} | Train AUC = {} | Test loss = {} | Test AUC = {}\n" . format(epoch, train_loss_batch, train_auc_batch, test_loss_batch, test_auc_batch))
-
-        print("Epoch {} | Train loss = {} | Train AUC = {}" . format(epoch, train_loss_batch, train_auc_batch))
-        print("Epoch {} | Test loss = {} | Test AUC = {}" . format(epoch, test_loss_batch, test_auc_batch))
-
-
-#IMN_net(data_train, data_test, embed_size=10, heads=2, mem_iter=10)
-
-
-
-
-# PARAMETRES DU MODULE, EST QU'UN MODULE POSSEDE UNE FONCTION PARAMETERS
-
-
-#train_accuracy.append(accuracy_score(label.cpu().detach().numpy(), np.argmax(softmax(final_out.cpu().detach().numpy()), axis=1) ))
-
-
-
-
-
+## Exemple de commande pour exécuter IMN
+# IMN_net(data_train, data_test, embed_size=3, heads=1, mem_iter=3, n_epochs = 200, lr = 0.001, reg=1e-6, p=0.2)
